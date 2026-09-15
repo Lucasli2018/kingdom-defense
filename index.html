@@ -115,6 +115,11 @@
   .achDesc{font-size:13px;color:#e9d6b8;}
   .tutText{max-width:460px;text-align:center;font-size:17px;color:#f3e9d6;line-height:1.6;}
   .tutStep{font-size:13px;color:#ffe05a;margin-top:4px;}
+  #rankList{display:flex;flex-direction:column;gap:6px;width:min(440px,88%);max-height:62vh;overflow:auto;}
+  .rankItem{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.3);border:2px solid #2a1c10;border-radius:10px;padding:6px 12px;}
+  .rankItem .rk{font-weight:700;color:#ffd23f;min-width:32px;}
+  .rankItem .rs{font-weight:700;color:#fff;min-width:70px;}
+  .rankItem .rm{font-size:13px;color:#e9d6b8;}
 </style>
 </head>
 <body>
@@ -153,10 +158,12 @@
         <div class="btnrow">
           <button class="pill go" id="campaignBtn">🏰 开始战役</button>
           <button class="pill go" id="endlessBtn">∞ 无尽模式</button>
+          <button class="pill go" id="dailyBtn">📅 每日挑战</button>
         </div>
         <div class="btnrow">
           <button class="pill" id="achBtn">🏆 成就</button>
           <button class="pill" id="howBtn">❓ 玩法</button>
+          <button class="pill" id="rankBtn">📊 排行</button>
         </div>
       </div>
       <div class="btnrow" id="overRow" style="display:none"><button class="pill go" id="againBtn">↻ 再玩一次</button></div>
@@ -175,6 +182,11 @@
         <button class="pill" id="tutPrev">上一步</button>
         <button class="pill go" id="tutNext">下一步</button>
       </div>
+    </div>
+    <div id="rankPanel" class="panel">
+      <h2>📊 排行榜</h2>
+      <div id="rankList"></div>
+      <button class="pill" id="rankClose">关闭</button>
     </div>
   </div>
 </div>
@@ -283,6 +295,30 @@ function unlockAch(id){
   G.achievements[id]=true;saveGame();
   toast('🏆 成就解锁：'+ACH[id].name,2200);
   try{SND.win();}catch(e){}
+}
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function rngFrom(seed){let s=seed>>>0;return function(){s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};}
+function genDailyWaves(seed){
+  const rng=rngFrom(hashStr(seed));const waves=[];const types=['goblin','orc','bat','troll'];
+  for(let w=0;w<12;w++){
+    const segs=[];const cnt=2+Math.floor(rng()*4);
+    for(let c=0;c<cnt;c++){
+      const t=types[Math.floor(rng()*types.length)];
+      const n=4+Math.floor(rng()*8);const g=300+Math.floor(rng()*900);
+      segs.push({t,n,g});
+    }
+    if(w===10)segs.push({t:'boss',n:1,g:0});
+    waves.push(segs);
+  }
+  return waves;
+}
+function loadRank(){try{return JSON.parse(localStorage.getItem('kd_rank_v1')||'[]');}catch(e){return [];}}
+function saveRank(r){try{localStorage.setItem('kd_rank_v1',JSON.stringify(r));}catch(e){}}
+function addRank(score){
+  const r=loadRank();
+  r.push({score:score,mode:G.mode,wave:G.wave,date:new Date().toISOString().slice(0,10)});
+  r.sort((a,b)=>b.score-a.score);
+  saveRank(r.slice(0,10));
 }
 
 /* ---------- 素材加载（WebP 已带 alpha，无需色键处理） ---------- */
@@ -695,30 +731,35 @@ function spawnEnemy(type){
   if(boss){G.bossActive=true;toast('⚠ 首领来袭！',2600);}
 }
 function buildSchedule(){
+  let base=WAVES;
+  if(G.mode==='daily'&&G.dailyWaves)base=G.dailyWaves;
   let segs;
-  if(G.wave<=WAVES.length){segs=WAVES[G.wave-1];}
-  else{ // 无尽模式程序化波次：规模随波数递增
-    const w=G.wave-WAVES.length;
+  if(G.wave<=base.length){segs=base[G.wave-1];}
+  else if(G.mode==='endless'){
+    const w=G.wave-base.length;
     segs=[{t:'goblin',n:6+w*2,g:360},{t:'orc',n:3+w,g:700},{t:'bat',n:2+w,g:800}];
     if(w%4===0)segs.push({t:'troll',n:1+Math.floor(w/4),g:1600});
     if(w%5===0)segs.push({t:'boss',n:1,g:0});
-  }
+  } else { segs=[]; }
   const sched=[];
   for(const s of segs){for(let k=0;k<s.n;k++)sched.push({type:s.t,time:k*s.g});}
   sched.sort((a,b)=>a.time-b.time);return sched;
 }
 function startWave(){
   if(G.state!=='idle'&&G.state!=='cleared')return;
-  if(G.mode!=='endless'&&G.wave>=WAVES.length)return;
+  const total=(G.mode==='daily'&&G.dailyWaves)?G.dailyWaves.length:WAVES.length;
+  if(G.mode!=='endless'&&G.wave>=total)return;
   G.wave++;G.state='wave';G.schedule=buildSchedule();G.spawned=0;G.spawnTimer=0;
   SND.wave();updateHUD();updateStartBtn();
-  toast(G.mode==='endless'?('♾ 第 '+G.wave+' 波（无尽）'):('第 '+G.wave+' 波 / '+WAVES.length),1600);
+  const lab=(G.mode==='endless')?('♾ 第 '+G.wave+' 波（无尽）'):('第 '+G.wave+' 波 / '+total);
+  toast(lab,1600);
 }
 function waveCleared(){
   G.state='cleared';G.bossActive=false;
   const bonus=20+G.wave*8;G.gold+=bonus;G.score+=bonus;
   G.floatTexts.push({x:W/2,y:H/2,txt:'波次完成 +'+bonus,color:'#7fff7f',life:1200,max:1200});
-  if(G.mode!=='endless'&&G.wave>=WAVES.length){gameOver(true);return;}
+  const total=(G.mode==='daily'&&G.dailyWaves)?G.dailyWaves.length:WAVES.length;
+  if(G.mode!=='endless'&&G.wave>=total){gameOver(true);return;}
   if(G.wave>G.bestWave)G.bestWave=G.wave;saveGame();
   updateHUD();updateStartBtn();
   if(G.mode==='endless'&&G.wave>=25)unlockAch('endless25');
@@ -728,6 +769,7 @@ function gameOver(win){
   G.state=win?'win':'over';
   if(G.wave>G.bestWave)G.bestWave=G.wave;
   const sc=G.score+(win?1000:0);if(sc>G.bestScore)G.bestScore=sc;
+  addRank(sc);
   saveGame();
   const ov=document.getElementById('overlay');ov.style.display='flex';
   document.getElementById('menuMain').style.display='none';
@@ -744,6 +786,8 @@ function gameOver(win){
 }
 function startGame(mode){
   G.mode=mode||'campaign';
+  if(G.mode==='daily'){G.dailySeed=new Date().toISOString().slice(0,10);G.dailyWaves=genDailyWaves(G.dailySeed);}
+  else{G.dailySeed=null;G.dailyWaves=null;}
   document.getElementById('overlay').style.display='none';
   resetGame();
 }
@@ -951,6 +995,21 @@ function openTutorial(){tutStep=0;renderTut();document.getElementById('tutPanel'
 function closeTutorial(){document.getElementById('tutPanel').style.display='none';if(!G.tutorialDone){G.tutorialDone=true;saveGame();}showMenu();}
 document.getElementById('tutPrev').onclick=()=>{if(tutStep>0){tutStep--;renderTut();}};
 document.getElementById('tutNext').onclick=()=>{if(tutStep>=TUT_STEPS.length-1)closeTutorial();else{tutStep++;renderTut();}};
+document.getElementById('dailyBtn').onclick=()=>{audio();startGame('daily');};
+document.getElementById('rankBtn').onclick=()=>{audio();openRank();};
+document.getElementById('rankClose').onclick=()=>{document.getElementById('rankPanel').style.display='none';};
+function renderRank(){
+  const list=document.getElementById('rankList');list.innerHTML='';
+  const r=loadRank();
+  if(!r.length){list.innerHTML='<div class="achDesc">暂无记录，快去挑战吧！</div>';return;}
+  r.forEach((e,i)=>{
+    const d=document.createElement('div');d.className='rankItem';
+    const modeName={campaign:'战役',endless:'无尽',daily:'每日'}[e.mode]||'';
+    d.innerHTML='<span class="rk">#'+(i+1)+'</span><span class="rs">'+e.score+' 分</span><span class="rm">'+modeName+' · 第'+e.wave+'波 · '+e.date+'</span>';
+    list.appendChild(d);
+  });
+}
+function openRank(){renderRank();document.getElementById('rankPanel').style.display='flex';}
 document.querySelectorAll('#diffSeg .segBtn').forEach(b=>{
   b.onclick=()=>{G.difficulty=b.dataset.d;saveGame();updateDiffUI();};
 });
