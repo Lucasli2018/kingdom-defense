@@ -89,6 +89,13 @@
     .tcard .name{font-size:11px;}.tcard .cost{font-size:11px;}.tcard .key{font-size:9px;}
     .stat{font-size:15px;padding:5px 9px;}
   }
+  #skillBar{position:absolute;left:50%;transform:translateX(-50%);bottom:100px;z-index:6;display:flex;gap:10px;align-items:center;
+    background:rgba(20,12,4,.72);padding:6px 12px;border-radius:12px;border:2px solid #21130a;box-shadow:0 4px 10px rgba(0,0,0,.4);}
+  #energyWrap{position:relative;width:190px;height:18px;background:#160c05;border-radius:9px;overflow:hidden;border:1px solid #3a2812;}
+  #energyFill{position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#3aa0ff,#aef0ff);transition:width .15s;}
+  #energyTxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:700;text-shadow:0 1px 2px #000;}
+  #skillBtn.ready{animation:pulseGlow 1s infinite;}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 8px #7fd0ff;}50%{box-shadow:0 0 18px #aef0ff;}}
 </style>
 </head>
 <body>
@@ -109,6 +116,10 @@
     <div class="hint" id="hint"></div>
     <div id="toast"></div>
     <div id="pop"></div>
+    <div id="skillBar">
+      <div id="energyWrap"><div id="energyFill"></div><span id="energyTxt">能量 0</span></div>
+      <button class="pill go" id="skillBtn">❄ 全屏冻冻 (Q)</button>
+    </div>
     <div id="bar"></div>
     <div id="overlay">
       <h1 id="ovTitle"></h1>
@@ -144,7 +155,9 @@ const TOWERS = {
   cannon:{name:'投石塔',cost:155,damage:36,range:101,cooldown:1320,splash:50,slow:0,slowDur:0,air:false,
     pSpeed:390,pColor:'#b9a98f',key:'3',desc:'重炮高伤 溅射 无法对空'},
   frost:{name:'冰霜塔',cost:95,damage:5,range:96,cooldown:660,splash:0,slow:0.45,slowDur:1500,air:true,
-    pSpeed:560,pColor:'#9fe6ff',key:'4',desc:'减速冰冻 可对空'}
+    pSpeed:560,pColor:'#9fe6ff',key:'4',desc:'减速冰冻 可对空'},
+  lightning:{name:'闪电塔',cost:130,damage:14,range:120,cooldown:780,splash:0,slow:0,slowDur:0,air:true,
+    pSpeed:0,pColor:'#aef0ff',key:'5',desc:'连锁闪电 弹射 可对空',chain:3,chainRange:95,chainFalloff:0.7}
 };
 const TYPES = Object.keys(TOWERS);
 
@@ -179,7 +192,7 @@ const G = {
   gold:200, life:20, wave:0, state:'idle', // idle|wave|cleared|over|win
   towers:[], enemies:[], projectiles:[], fx:[], floatTexts:[],
   selectedType:null, selectedTower:null, hoverX:0, hoverY:0, hoverValid:false,
-  speed:1, autoTimer:0, paused:false, mute:false, bossActive:false
+  speed:1, autoTimer:0, paused:false, mute:false, bossActive:false, energy:0, freezeAllT:0
 };
 
 /* ---------- 素材加载（WebP 已带 alpha，无需色键处理） ---------- */
@@ -345,6 +358,8 @@ function drawTower(t){
   // 精灵
   const img=IMG[t.type];
   if(img){ctx.drawImage(img,t.x-s/2,t.y-s*0.52,s,s);}
+  else if(t.type==='lightning'){ctx.fillStyle='rgba(120,210,255,.22)';ctx.beginPath();ctx.arc(t.x,t.y-s*0.12,s*0.42,0,Math.PI*2);ctx.fill();
+    ctx.font=(s*0.5|0)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',t.x,t.y-s*0.06);ctx.textBaseline='alphabetic';}
   else{ctx.fillStyle='#888';ctx.fillRect(t.x-20,t.y-30,40,50);}
   // 等级标记
   for(let i=0;i<lv;i++){ctx.fillStyle='#ffd23f';ctx.strokeStyle='#7a4a06';ctx.lineWidth=1.5;
@@ -362,6 +377,8 @@ function drawTowerPreview(){
   const s=64;const img=IMG[G.selectedType];
   ctx.globalAlpha=ok?0.85:0.45;
   if(img)ctx.drawImage(img,x-s/2,y-s*0.52,s,s);
+  else if(G.selectedType==='lightning'){ctx.fillStyle='rgba(120,210,255,.22)';ctx.beginPath();ctx.arc(x,y-s*0.12,s*0.42,0,Math.PI*2);ctx.fill();
+    ctx.font=(s*0.5|0)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',x,y-s*0.06);ctx.textBaseline='alphabetic';}
   ctx.globalAlpha=1;ctx.restore();
 }
 
@@ -375,7 +392,8 @@ function drawEnemy(e){
   // 飞行抖动
   if(e.flying)ctx.translate(0,Math.sin(e.t*0.012)*3);
   // boss 红光环
-  if(e.boss){ctx.fillStyle='rgba(255,40,40,0.16)';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();}
+  if(e.boss){ctx.fillStyle='rgba(255,40,40,0.16)';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();
+    if(e.phase2){ctx.strokeStyle='rgba(255,90,90,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,s*0.66,0,Math.PI*2);ctx.stroke();}}
   const img=IMG[e.base];
   if(img){
     if(e.boss){ctx.globalAlpha=1;ctx.drawImage(img,-s/2,-s*0.55,s,s);
@@ -414,6 +432,13 @@ function drawFx(f){
     ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,f.r*0.7,0,Math.PI*2);ctx.stroke();}
   else if(f.k==='spark'){ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();}
   else if(f.k==='ring'){ctx.strokeStyle=f.color;ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.stroke();}
+  else if(f.k==='chain'){ctx.strokeStyle=f.color;ctx.lineWidth=2.4;ctx.shadowColor=f.color;ctx.shadowBlur=10;
+    ctx.beginPath();
+    for(let i=0;i<f.nodes.length;i++){const n=f.nodes[i];
+      if(i===0){ctx.moveTo(n.x,n.y);continue;}
+      const p=f.nodes[i-1];const mx=(p.x+n.x)/2+(Math.random()*18-9),my=(p.y+n.y)/2+(Math.random()*18-9);
+      ctx.lineTo(mx,my);ctx.lineTo(n.x,n.y);}
+    ctx.stroke();ctx.shadowBlur=0;}
   ctx.globalAlpha=1;
 }
 function drawFloats(){
@@ -435,6 +460,7 @@ function update(dt){
   if(G.state==='over'||G.state==='win')return;
   // 城堡受击红光平滑淡出（避免卡住/脉动造成屏幕闪烁）
   if(G.castleHitT>0){G.castleHitT-=dt*60;if(G.castleHitT<0)G.castleHitT=0;}
+  if(G.freezeAllT>0)G.freezeAllT-=dt*1000;
   // 波次生成
   if(G.state==='wave')updateWave(dt);
   // 塔射击
@@ -453,7 +479,16 @@ function update(dt){
   for(let i=G.enemies.length-1;i>=0;i--){
     const e=G.enemies[i];e.t+=dt*1000;
     if(e.slowT>0)e.slowT-=dt*1000;
-    const sp=e.speed*(e.slowT>0?1-e.slow:1);
+    if(e.boss&&!e.phase2&&e.hp<=e.maxHp*0.5){
+      e.phase2=true;e.speed*=1.3;
+      G.floatTexts.push({x:e.x,y:e.y-10,txt:'狂爆!',color:'#ff5555',life:900,max:900});
+      toast('⚠ 首领进入狂爆，召唤援军！',1800);
+      for(let k=0;k<2;k++){const sc=1+(G.wave-1)*0.07;const g={base:'goblin',type:'goblin',boss:false,
+        hp:ENEMIES.goblin.hp*sc,maxHp:ENEMIES.goblin.hp*sc,speed:ENEMIES.goblin.speed,reward:ENEMIES.goblin.reward,
+        armor:ENEMIES.goblin.armor,flying:false,dist:Math.max(0,e.dist-30-k*22),x:0,y:0,slowT:0,slow:0,t:0,dead:false,phase2:false};
+        const p=posOnPath(g.dist);g.x=p.x;g.y=p.y;G.enemies.push(g);}
+    }
+    const sp=e.speed*(e.slowT>0?1-e.slow:1)*(G.freezeAllT>0?0.05:1);
     e.dist+=sp*dt;
     if(e.dist>=TOTAL_LEN){
       G.life-=e.boss?5:1;G.castleHitT=18;SND.hurt();updateHUD();
@@ -477,6 +512,7 @@ function update(dt){
   }
 }
 function tryShoot(t){
+  if(t.type==='lightning'){chainLightning(t);return;}
   const def=TOWERS[t.type];const range=t.range;
   let best=null,bestDist=-1;
   for(const e of G.enemies){
@@ -515,9 +551,30 @@ function damageEnemy(e,dmg){
   const real=Math.max(1,dmg-(e.armor||0));
   e.hp-=real;
 }
+function chainLightning(t){
+  const def=TOWERS[t.type];const range=t.range;
+  let best=null,bestDist=-1;
+  for(const e of G.enemies){if(e.dead)continue;if(e.flying&&!def.air)continue;
+    const d=dist(t.x,t.y,e.x,e.y);if(d>range)continue;if(e.dist>bestDist){bestDist=e.dist;best=e;}}
+  if(!best)return;
+  t.cool=t.cooldown;t.aim=Math.atan2(best.y-t.y,best.x-t.x);
+  const nodes=[{x:t.x,y:t.y-12}];const hitSet=new Set();let cur=best,dmg=t.damage;
+  for(let step=0;step<def.chain&&cur;step++){
+    nodes.push({x:cur.x,y:cur.y});hitSet.add(cur);damageEnemy(cur,dmg);
+    G.fx.push({k:'spark',x:cur.x,y:cur.y,r:5,vr:34,life:200,max:200,color:'#aef0ff',vx:0,vy:0});
+    let nx=null,nd=1e9;
+    for(const e of G.enemies){if(e.dead||hitSet.has(e))continue;if(e.flying&&!def.air)continue;
+      const d=dist(cur.x,cur.y,e.x,e.y);if(d>def.chainRange)continue;if(d<nd){nd=d;nx=e;}}
+    cur=nx;dmg*=def.chainFalloff;
+  }
+  G.fx.push({k:'chain',nodes,life:180,max:180,color:'#aef0ff'});
+  for(let i=G.enemies.length-1;i>=0;i--){if(G.enemies[i].hp<=0)killEnemy(G.enemies[i],i);}
+  SND.shoot();
+}
 function killEnemy(e,i){
   e.dead=true;
   G.gold+=e.reward;
+  G.energy=Math.min(100,G.energy+(e.boss?24:3));updateEnergyUI();
   G.floatTexts.push({x:e.x,y:e.y-10,txt:'+'+e.reward,color:'#ffd23f',life:700,max:700});
   G.fx.push({k:'spark',x:e.x,y:e.y,r:8,vr:50,life:300,max:300,color:e.boss?'#ff5555':'#ffd23f',vx:0,vy:0});
   SND.die();
@@ -540,7 +597,7 @@ function spawnEnemy(type){
   const hp=boss?def.hp*6*hpScale:def.hp*hpScale;
   const e={base,type,boss,hp,maxHp:hp,speed:def.speed,reward:boss?120:def.reward,
     armor:boss?8:def.armor,flying:def.flying,dist:0,x:PATH[0].x,y:PATH[0].y,
-    slowT:0,slow:0,t:0,dead:false};
+    slowT:0,slow:0,t:0,dead:false,phase2:false};
   G.enemies.push(e);
   if(boss){G.bossActive=true;toast('⚠ 首领来袭！',2600);}
 }
@@ -579,7 +636,21 @@ function resetGame(){
   G.selectedType=null;G.selectedTower=null;G.bossActive=false;G.autoTimer=0;
   G.paused=false;updatePauseUI();
   document.getElementById('overlay').style.display='none';
-  updateHUD();updateStartBtn();renderBar();
+  G.energy=0;G.freezeAllT=0;
+  updateHUD();updateStartBtn();renderBar();updateEnergyUI();
+}
+function updateEnergyUI(){
+  const f=document.getElementById('energyFill');const t=document.getElementById('energyTxt');
+  if(!f)return;const pct=Math.min(100,G.energy);f.style.width=pct+'%';
+  t.textContent='能量 '+Math.floor(pct)+(pct>=100?' 就绪!':'');
+  const b=document.getElementById('skillBtn');if(b){if(pct>=100)b.classList.add('ready');else b.classList.remove('ready');}
+}
+function castFreeze(){
+  if(G.state!=='wave'&&G.state!=='cleared'){toast('开战后才能释放技能');return;}
+  if(G.energy<100){toast('能量不足（需 100）');return;}
+  G.energy=0;G.freezeAllT=3000;
+  G.fx.push({k:'ring',x:W/2,y:H/2,r:20,vr:0.8,life:800,max:800,color:'rgba(150,220,255,.9)'});
+  toast('❄ 全屏冻冻！敌人被冻结 3 秒',1600);SND.wave();updateEnergyUI();
 }
 
 /* ---------- 暂停 ---------- */
@@ -634,6 +705,8 @@ function renderBar(){
     const ico=d.querySelector('.ico');
     if(IMG[type]){const c=document.createElement('canvas');c.width=50;c.height=50;
       const x=c.getContext('2d');x.drawImage(IMG[type],0,0,50,50);ico.appendChild(c);}
+    else if(type==='lightning'){const c=document.createElement('canvas');c.width=50;c.height=50;
+      const x=c.getContext('2d');x.font='34px serif';x.textAlign='center';x.textBaseline='middle';x.fillText('⚡',25,27);ico.appendChild(c);}
     d.onclick=()=>{if(!can){toast('金币不足');return;}G.selectedType=(G.selectedType===type?null:type);G.selectedTower=null;hidePopup();renderBar();};
     bar.appendChild(d);
   }
@@ -716,11 +789,13 @@ document.addEventListener('keydown',ev=>{
   const k=ev.key;
   if(k==='1')selectByKey('archer');else if(k==='2')selectByKey('magic');
   else if(k==='3')selectByKey('cannon');else if(k==='4')selectByKey('frost');
+  else if(k==='5')selectByKey('lightning');
   else if(k==='Escape'){G.selectedType=null;G.selectedTower=null;hidePopup();renderBar();}
   else if(k===' '){ev.preventDefault();if(G.paused){togglePause();return;}if(G.state==='idle'||G.state==='cleared')startWave();}
   else if(k==='p'||k==='P'){togglePause();}
   else if(k==='u'||k==='U'){if(G.selectedTower)upgradeTower(G.selectedTower);}
   else if(k==='s'||k==='S'){if(G.selectedTower)sellTower(G.selectedTower);}
+  else if(k==='q'||k==='Q'){castFreeze();}
 });
 function selectByKey(type){if(G.gold<TOWERS[type].cost)return;
   G.selectedType=(G.selectedType===type?null:type);G.selectedTower=null;hidePopup();renderBar();}
@@ -729,6 +804,7 @@ document.getElementById('startBtn').onclick=()=>{audio();if(G.paused){togglePaus
 document.getElementById('againBtn').onclick=()=>resetGame();
 document.getElementById('muteBtn').onclick=()=>{G.mute=!G.mute;document.getElementById('muteBtn').textContent=G.mute?'🔇':'🔊';};
 document.getElementById('pauseBtn').onclick=()=>{audio();togglePause();};
+document.getElementById('skillBtn').onclick=()=>{audio();castFreeze();};
 
 /* ---------- 主渲染 ---------- */
 function render(){
@@ -746,6 +822,10 @@ function render(){
   for(const p of G.projectiles)drawProjectile(p);
   for(const f of G.fx)drawFx(f);
   drawFloats();
+  if(G.freezeAllT>0){const a=Math.min(0.26,G.freezeAllT/3000*0.26);
+    ctx.fillStyle='rgba(150,220,255,'+a+')';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(225,245,255,'+(a*1.4)+')';ctx.font='700 22px Fredoka';ctx.textAlign='center';
+    ctx.fillText('❄ 冻冻中',W/2,42);ctx.textAlign='left';}
 }
 /* 自动波次倒计时（独立于 render，暂停时不递减） */
 let autoAcc=0;
@@ -764,7 +844,7 @@ async function boot(){
   }));
   buildStaticLayer();                  // 烘焙静态背景层
   updateHUD();renderBar();
-  hint('选塔 → 点草地建造 · 空格开始波次 · P暂停 · U升级 S出售');
+  hint('选塔(1-5) → 点草地建造 · 空格开波 · P暂停 · U升级 S出售 · Q全屏冰冻');
   setTimeout(()=>hint(''),6000);
   requestAnimationFrame(loop);
 }
