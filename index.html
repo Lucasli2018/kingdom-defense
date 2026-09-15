@@ -113,6 +113,8 @@
   .achIcon{font-size:24px;}
   .achName{font-weight:700;color:#fff;min-width:84px;}
   .achDesc{font-size:13px;color:#e9d6b8;}
+  .tutText{max-width:460px;text-align:center;font-size:17px;color:#f3e9d6;line-height:1.6;}
+  .tutStep{font-size:13px;color:#ffe05a;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -164,6 +166,15 @@
       <h2>🏆 成就</h2>
       <div id="achList"></div>
       <button class="pill" id="achClose">关闭</button>
+    </div>
+    <div id="tutPanel" class="panel">
+      <h2>🐱 新手引导</h2>
+      <div id="tutText" class="tutText"></div>
+      <div id="tutStep" class="tutStep"></div>
+      <div class="btnrow">
+        <button class="pill" id="tutPrev">上一步</button>
+        <button class="pill go" id="tutNext">下一步</button>
+      </div>
     </div>
   </div>
 </div>
@@ -917,7 +928,7 @@ document.getElementById('campaignBtn').onclick=()=>{audio();startGame('campaign'
 document.getElementById('endlessBtn').onclick=()=>{audio();startGame('endless');};
 document.getElementById('achBtn').onclick=()=>{audio();openAch();};
 document.getElementById('achClose').onclick=()=>{document.getElementById('achPanel').style.display='none';};
-document.getElementById('howBtn').onclick=()=>{audio();toast('选塔(1-5)→点草地建造→空格开波→P暂停→U升级 S出售→Q全屏冰冻',3200);};
+document.getElementById('howBtn').onclick=()=>{audio();openTutorial();};
 function renderAch(){
   const list=document.getElementById('achList');list.innerHTML='';
   for(const id in ACH){
@@ -928,6 +939,18 @@ function renderAch(){
   }
 }
 function openAch(){renderAch();document.getElementById('achPanel').style.display='flex';}
+let tutStep=0;
+const TUT_STEPS=['① 选塔：按数字键 1-5 或点底部塔栏，选择一种防御塔','② 建造：在草地（非路径、非边缘）点击放置，会消耗金币','③ 开波：按空格键或点「开始波次」，敌人将从左侧出发','④ 升级/出售：点击已建造的塔，可花金币升级(U)或出售(S)返还','⑤ 技能：击杀攒满能量后，按 Q 释放全屏冰冻冻结敌人','⑥ 目标：守住城堡，别让敌人走到右端！撑过全部波次即获胜'];
+function renderTut(){
+  document.getElementById('tutText').textContent=TUT_STEPS[tutStep];
+  document.getElementById('tutStep').textContent=(tutStep+1)+' / '+TUT_STEPS.length;
+  document.getElementById('tutPrev').disabled=tutStep===0;
+  document.getElementById('tutNext').textContent=tutStep===TUT_STEPS.length-1?'开始游戏':'下一步';
+}
+function openTutorial(){tutStep=0;renderTut();document.getElementById('tutPanel').style.display='flex';}
+function closeTutorial(){document.getElementById('tutPanel').style.display='none';if(!G.tutorialDone){G.tutorialDone=true;saveGame();}showMenu();}
+document.getElementById('tutPrev').onclick=()=>{if(tutStep>0){tutStep--;renderTut();}};
+document.getElementById('tutNext').onclick=()=>{if(tutStep>=TUT_STEPS.length-1)closeTutorial();else{tutStep++;renderTut();}};
 document.querySelectorAll('#diffSeg .segBtn').forEach(b=>{
   b.onclick=()=>{G.difficulty=b.dataset.d;saveGame();updateDiffUI();};
 });
@@ -987,7 +1010,7 @@ async function boot(){
   buildStaticLayer();                  // 烘焙静态背景层
   loadGame();
   updateHUD();renderBar();
-  showMenu();
+  if(!G.tutorialDone)openTutorial();else showMenu();
   setTimeout(()=>hint('选难度后点「开始战役」· 选塔(1-5)建造 · 空格开波'),7000);
   requestAnimationFrame(loop);
 }
