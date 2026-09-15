@@ -104,6 +104,15 @@
   .segBtn:hover{transform:translateY(-1px);}
   .segBtn.active{background:linear-gradient(180deg,#ff9d5c,#ff7a3c);color:#fff;border-color:#ffd0a0;box-shadow:0 0 10px rgba(255,140,80,.6);}
   .menuStats{margin-top:6px;font-size:14px;color:#ffe05a;text-shadow:0 1px 2px #000;}
+  .panel{position:absolute;inset:0;z-index:12;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    background:rgba(10,6,2,.82);padding:24px;}
+  .panel h2{font-size:34px;margin:0;color:#ffe05a;text-shadow:0 2px 0 #000;}
+  #achList{display:flex;flex-direction:column;gap:8px;width:min(420px,86%);max-height:62vh;overflow:auto;}
+  .achItem{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.3);border:2px solid #2a1c10;border-radius:10px;padding:8px 12px;opacity:.55;}
+  .achItem.got{opacity:1;border-color:#ff9d5c;box-shadow:0 0 10px rgba(255,140,80,.35);}
+  .achIcon{font-size:24px;}
+  .achName{font-weight:700;color:#fff;min-width:84px;}
+  .achDesc{font-size:13px;color:#e9d6b8;}
 </style>
 </head>
 <body>
@@ -143,9 +152,18 @@
           <button class="pill go" id="campaignBtn">🏰 开始战役</button>
           <button class="pill go" id="endlessBtn">∞ 无尽模式</button>
         </div>
+        <div class="btnrow">
+          <button class="pill" id="achBtn">🏆 成就</button>
+          <button class="pill" id="howBtn">❓ 玩法</button>
+        </div>
       </div>
       <div class="btnrow" id="overRow" style="display:none"><button class="pill go" id="againBtn">↻ 再玩一次</button></div>
       <div id="menuStats" class="menuStats"></div>
+    </div>
+    <div id="achPanel" class="panel">
+      <h2>🏆 成就</h2>
+      <div id="achList"></div>
+      <button class="pill" id="achClose">关闭</button>
     </div>
   </div>
 </div>
@@ -238,6 +256,22 @@ function saveGame(){
   try{localStorage.setItem(SAVE_KEY,JSON.stringify({
     bestWave:G.bestWave,bestScore:G.bestScore,achievements:G.achievements,
     difficulty:G.difficulty,tutorialDone:G.tutorialDone}));}catch(e){}
+}
+
+/* ---------- 成就 ---------- */
+const ACH = {
+  first_win:{name:'初战告捷',desc:'通关一次战役模式',icon:'🏆'},
+  endless25:{name:'无尽守卫',desc:'无尽模式到达 25 波',icon:'♾'},
+  kills50:{name:'屠戮勇士',desc:'单局击杀 50 个敌人',icon:'⚔'},
+  build10:{name:'建筑大师',desc:'单局建造 10 座塔',icon:'🏰'},
+  flawless:{name:'固若金汤',desc:'通关时城堡毫发无伤',icon:'🛡'},
+  all_towers:{name:'全兵种',desc:'同时拥有全部 5 种塔',icon:'🌟'}
+};
+function unlockAch(id){
+  if(G.achievements[id])return;
+  G.achievements[id]=true;saveGame();
+  toast('🏆 成就解锁：'+ACH[id].name,2200);
+  try{SND.win();}catch(e){}
 }
 
 /* ---------- 素材加载（WebP 已带 alpha，无需色键处理） ---------- */
@@ -620,6 +654,7 @@ function chainLightning(t){
 function killEnemy(e,i){
   e.dead=true;
   G.gold+=e.reward;G.score+=e.reward;G.kills++;
+  if(G.kills>=50)unlockAch('kills50');
   G.energy=Math.min(100,G.energy+(e.boss?24:3));updateEnergyUI();
   G.floatTexts.push({x:e.x,y:e.y-10,txt:'+'+e.reward,color:'#ffd23f',life:700,max:700});
   G.fx.push({k:'spark',x:e.x,y:e.y,r:8,vr:50,life:300,max:300,color:e.boss?'#ff5555':'#ffd23f',vx:0,vy:0});
@@ -675,6 +710,7 @@ function waveCleared(){
   if(G.mode!=='endless'&&G.wave>=WAVES.length){gameOver(true);return;}
   if(G.wave>G.bestWave)G.bestWave=G.wave;saveGame();
   updateHUD();updateStartBtn();
+  if(G.mode==='endless'&&G.wave>=25)unlockAch('endless25');
   G.autoTimer=5; // 5秒后自动开始
 }
 function gameOver(win){
@@ -691,6 +727,8 @@ function gameOver(win){
   t.className=win?'win':'lose';
   const modeName={campaign:'战役',endless:'无尽',daily:'每日'}[G.mode]||'';
   tx.textContent=`[${modeName}] 第 ${G.wave} 波 · 剩余生命 ${Math.max(0,G.life)}`;
+  if(win&&G.mode==='campaign')unlockAch('first_win');
+  if(win&&G.life>=20)unlockAch('flawless');
   if(win)SND.win();else SND.lose();
 }
 function startGame(mode){
@@ -845,6 +883,8 @@ cv.addEventListener('click',ev=>{
     G.towers.push({type:G.selectedType,x:p.x,y:p.y,level:1,damage:def.damage,range:def.range,
       cooldown:def.cooldown,cool:0,invest:def.cost,aim:0});
     SND.build();updateHUD();renderBar();
+    if(G.towers.length>=10)unlockAch('build10');
+    if(TYPES.every(t=>G.towers.some(x=>x.type===t)))unlockAch('all_towers');
     if(G.gold<def.cost)G.selectedType=null;
     renderBar();
     return;
@@ -875,6 +915,19 @@ document.getElementById('pauseBtn').onclick=()=>{audio();togglePause();};
 document.getElementById('skillBtn').onclick=()=>{audio();castFreeze();};
 document.getElementById('campaignBtn').onclick=()=>{audio();startGame('campaign');};
 document.getElementById('endlessBtn').onclick=()=>{audio();startGame('endless');};
+document.getElementById('achBtn').onclick=()=>{audio();openAch();};
+document.getElementById('achClose').onclick=()=>{document.getElementById('achPanel').style.display='none';};
+document.getElementById('howBtn').onclick=()=>{audio();toast('选塔(1-5)→点草地建造→空格开波→P暂停→U升级 S出售→Q全屏冰冻',3200);};
+function renderAch(){
+  const list=document.getElementById('achList');list.innerHTML='';
+  for(const id in ACH){
+    const a=ACH[id];const got=!!G.achievements[id];
+    const d=document.createElement('div');d.className='achItem'+(got?' got':'');
+    d.innerHTML='<span class="achIcon">'+(got?a.icon:'🔒')+'</span><span class="achName">'+a.name+'</span><span class="achDesc">'+a.desc+'</span>';
+    list.appendChild(d);
+  }
+}
+function openAch(){renderAch();document.getElementById('achPanel').style.display='flex';}
 document.querySelectorAll('#diffSeg .segBtn').forEach(b=>{
   b.onclick=()=>{G.difficulty=b.dataset.d;saveGame();updateDiffUI();};
 });
