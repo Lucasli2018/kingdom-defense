@@ -988,6 +988,7 @@ function renderBar(){
   for(const type of TYPES){
     const def=TOWERS[type];const can=G.gold>=def.cost;
     const d=document.createElement('div');d.className='tcard'+(G.selectedType===type?' sel':'')+(can?'':' disabled');
+    d.dataset.type=type;                      // 供悬停信息卡识别
     d.innerHTML=`<div class="key">${def.key}</div><div class="ico"></div><div class="name">${def.name}</div><div class="cost">🪙 ${def.cost}</div>`;
     const ico=d.querySelector('.ico');
     if(IMG[type]){const c=document.createElement('canvas');c.width=50;c.height=50;
@@ -998,6 +999,22 @@ function renderBar(){
     bar.appendChild(d);
   }
 }
+/* 建塔栏悬停信息卡：事件委托（卡片会被 renderBar 重建，绑在容器上更稳） */
+(function bindBarHover(){
+  const bar=document.getElementById('bar');if(!bar)return;
+  let cur=null;
+  bar.addEventListener('mouseover',ev=>{
+    const c=ev.target&&ev.target.closest?ev.target.closest('.tcard'):null;
+    if(!c||!c.dataset.type)return;
+    if(cur===c.dataset.type&&document.getElementById('tip').style.display==='block')return;  // 卡片内移动不重复渲染
+    cur=c.dataset.type;
+    showDefTip(c.dataset.type,c);
+  });
+  bar.addEventListener('mouseout',ev=>{
+    if(ev.relatedTarget&&bar.contains(ev.relatedTarget))return;   // 仍在栏内移动
+    cur=null;hideTip();
+  });
+})();
 function showPopup(t){
   const pop=document.getElementById('pop');pop.style.display='flex';
   const def=TOWERS[t.type];
@@ -1030,21 +1047,23 @@ function positionPopup(t){
   if(py<60)pop.style.top=(t.y*sx+10)+'px';
 }
 function hidePopup(){document.getElementById('pop').style.display='none';}
-/* ---------- 悬停信息卡（鼠标停在塔上显示基础信息，不与升级面板冲突） ---------- */
-function showTip(t){
-  if(!t){hideTip();return;}
-  const tip=document.getElementById('tip');const def=TOWERS[t.type];
+/* ---------- 悬停信息卡（鼠标停在塔上 / 建塔栏卡片上显示基础信息，不与升级面板冲突） ---------- */
+function tipHTML(def,level,damage,range,cooldown,footer){
   const feats=[];
   if(def.splash)feats.push('溅射 '+def.splash);
   if(def.slow)feats.push('减速 '+Math.round(def.slow*100)+'%');
   if(def.chain)feats.push('连锁 '+def.chain+' 跳');
   feats.push(def.air?'可对空':'仅对地');
-  tip.innerHTML=
-    '<div class="th">'+def.name+' <span class="lv">Lv'+t.level+'</span></div>'+
-    '<div class="grid"><span>伤害 <b>'+t.damage+'</b></span><span>射程 <b>'+Math.round(t.range)+'</b></span><span>射速 <b>'+(1000/t.cooldown).toFixed(1)+'/s</b></span></div>'+
+  return '<div class="th">'+def.name+' <span class="lv">Lv'+level+'</span></div>'+
+    '<div class="grid"><span>伤害 <b>'+damage+'</b></span><span>射程 <b>'+Math.round(range)+'</b></span><span>射速 <b>'+(1000/cooldown).toFixed(1)+'/s</b></span></div>'+
     '<div class="feat">'+(feats.join(' · '))+'</div>'+
     '<div class="feat" style="color:#cdb085">'+(def.desc||'')+'</div>'+
-    '<div class="hint2">点击可升级 / 出售</div>';
+    (footer?'<div class="hint2">'+footer+'</div>':'');
+}
+function showTip(t){
+  if(!t){hideTip();return;}
+  const tip=document.getElementById('tip');
+  tip.innerHTML=tipHTML(TOWERS[t.type],t.level,t.damage,t.range,t.cooldown,'点击可升级 / 出售');
   positionTip(t);
   tip.style.display='block';
 }
@@ -1057,6 +1076,24 @@ function positionTip(t){
   const tw=tip.offsetWidth||162,th2=tip.offsetHeight||70;
   if(px-78+tw>r.width-4)tip.style.left=(r.width-tw-4)+'px';   // 右越界回拉
   if(py+th2>r.height-4)tip.style.top=(t.y*sx-8-th2)+'px';     // 下越界改上方
+}
+/* 建塔栏卡片悬停：显示该塔的 1 级基础属性，卡片上方弹出（放不下则改下方） */
+function showDefTip(type,el){
+  const def=TOWERS[type];if(!def||!el)return;
+  const tip=document.getElementById('tip');
+  tip.innerHTML=tipHTML(def,1,def.damage,def.range,def.cooldown,'点击选中后放到路边空地');
+  tip.style.display='block';
+  positionTipAt(el,tip.offsetWidth||162,tip.offsetHeight||70);
+}
+function positionTipAt(el,tw,th2){
+  const tip=document.getElementById('tip');const st=document.getElementById('stage');
+  const r=st.getBoundingClientRect();const cr=el.getBoundingClientRect();
+  let left=cr.left-r.left+cr.width/2-tw/2;
+  let top=cr.top-r.top-th2-10;                                // 优先卡片上方
+  if(left<4)left=4;
+  if(left+tw>r.width-4)left=r.width-tw-4;                     // 右越界回拉
+  if(top<4)top=cr.bottom-r.top+10;                            // 上方放不下改下方
+  tip.style.left=left+'px';tip.style.top=top+'px';
 }
 function toast(msg,dur=1500){
   const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
