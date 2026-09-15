@@ -40,13 +40,23 @@
   .pill.mute{background:linear-gradient(180deg,#5b6470,#363c45);border-color:#22262c;box-shadow:0 3px 0 #22262c,0 5px 8px var(--shadow);}
   .pill.pause{background:linear-gradient(180deg,#3a8fd0,#1f5a8c);border-color:#134060;box-shadow:0 3px 0 #134060,0 5px 8px var(--shadow);}
   .pill.pause:active{box-shadow:0 1px 0 #134060,0 2px 4px var(--shadow);}
+  .pill.speed{background:linear-gradient(180deg,#3a8fd0,#1f5a8c);border-color:#134060;box-shadow:0 3px 0 #134060,0 5px 8px var(--shadow);min-width:46px;}
+  .pill.speed:active{box-shadow:0 1px 0 #134060,0 2px 4px var(--shadow);}
+  .pill.speed.turbo{background:linear-gradient(180deg,#f0a03c,#c46c10);border-color:#7a4008;box-shadow:0 3px 0 #7a4008,0 5px 8px var(--shadow),0 0 14px rgba(255,180,80,.55);}
   .btnrow{display:flex;gap:8px;pointer-events:auto;}
-  /* 暂停遮罩 */
+  /* 暂停遮罩（改造为可点击的暂停菜单） */
   #pauseMask{position:absolute;inset:0;z-index:6;display:none;align-items:center;justify-content:center;flex-direction:column;
-    background:rgba(10,16,6,.55);backdrop-filter:blur(2px);pointer-events:none;}
+    background:rgba(10,16,6,.62);backdrop-filter:blur(3px);pointer-events:auto;}
   #pauseMask.show{display:flex;}
-  #pauseMask h2{font-size:48px;margin:0 0 6px;font-weight:700;color:#ffe05a;text-shadow:0 3px 0 #000,0 6px 14px rgba(0,0,0,.5);}
-  #pauseMask p{font-size:14px;color:#e9d6b8;margin:0;}
+  .pauseCard{display:flex;flex-direction:column;align-items:center;gap:8px;
+    background:linear-gradient(180deg,#4a2c18,#2b1809);border:3px solid #21130a;border-radius:20px;
+    padding:22px 38px 24px;box-shadow:0 10px 0 #140b04,0 18px 36px rgba(0,0,0,.55);}
+  #pauseMask h2{font-size:44px;margin:0 0 2px;font-weight:700;color:#ffe05a;text-shadow:0 3px 0 #000,0 6px 14px rgba(0,0,0,.5);}
+  #pauseMask p{font-size:14px;color:#e9d6b8;margin:0 0 10px;}
+  .pauseBtns{display:flex;flex-direction:column;gap:10px;width:100%;}
+  .pauseBtns .pill{width:100%;font-size:16px;padding:11px 18px;}
+  .pill.home{background:linear-gradient(180deg,#5b6470,#363c45);border-color:#22262c;box-shadow:0 3px 0 #22262c,0 5px 8px var(--shadow);}
+  .pill.home:active{box-shadow:0 1px 0 #22262c,0 2px 4px var(--shadow);}
   .pulse{animation:pulse 1.4s ease-in-out infinite;}
   @keyframes pulse{0%,100%{opacity:.55;}50%{opacity:1;}}
   /* tower bar */
@@ -132,11 +142,12 @@
       <div class="stat wave"><span id="waveV">波次 0/15</span></div>
       <div class="btnrow">
         <button class="pill mute small" id="muteBtn">🔊</button>
+        <button class="pill speed small" id="speedBtn">1×</button>
         <button class="pill pause small" id="pauseBtn">⏸</button>
         <button class="pill go" id="startBtn">▶ 开始波次</button>
       </div>
     </div>
-    <div id="pauseMask"><h2 class="pulse">已 暂 停</h2><p>按 P 或 ⏸ 继续</p></div>
+    <div id="pauseMask"><div class="pauseCard"><h2 class="pulse">已 暂 停</h2><p>按 P / ⏸ 继续，或选择下方操作</p><div class="pauseBtns"><button class="pill go" id="pauseResume">▶ 返回游戏</button><button class="pill" id="pauseRestart">↻ 重新开始</button><button class="pill home" id="pauseHome">🏠 回到主页</button></div></div></div>
     <div class="hint" id="hint"></div>
     <div id="toast"></div>
     <div id="pop"></div>
@@ -252,7 +263,7 @@ const WAVES = [
 /* ---------- 游戏状态 ---------- */
 const G = {
   gold:200, life:20, wave:0, state:'idle', // idle|wave|cleared|over|win
-  towers:[], enemies:[], projectiles:[], fx:[], floatTexts:[],
+  towers:[], enemies:[], projectiles:[], fx:[], floatTexts:[], deaths:[],
   selectedType:null, selectedTower:null, hoverX:0, hoverY:0, hoverValid:false,
   speed:1, autoTimer:0, paused:false, mute:false, bossActive:false, energy:0, freezeAllT:0,
   mode:'campaign', difficulty:'normal', kills:0, score:0, bestWave:0, bestScore:0,
@@ -481,12 +492,17 @@ function drawTower(t){
   const showRange=(G.selectedTower===t);
   if(showRange){ctx.fillStyle='rgba(255,220,90,.12)';ctx.strokeStyle='rgba(255,210,70,.7)';ctx.lineWidth=2;
     ctx.beginPath();ctx.arc(t.x,t.y,t.range,0,Math.PI*2);ctx.fill();ctx.stroke();}
-  // 精灵
+  // 待机呼吸 + 开火后坐
+  const breathe=1+Math.sin((t.t||0)*0.003)*0.014;
+  const recoil=(t.recoil||0);
+  const sc=breathe*(1-recoil*0.1);
+  ctx.save();ctx.translate(t.x,t.y);ctx.scale(sc,sc);
   const img=IMG[t.type];
-  if(img){ctx.drawImage(img,t.x-s/2,t.y-s*0.52,s,s);}
-  else if(t.type==='lightning'){ctx.fillStyle='rgba(120,210,255,.22)';ctx.beginPath();ctx.arc(t.x,t.y-s*0.12,s*0.42,0,Math.PI*2);ctx.fill();
-    ctx.font=(s*0.5|0)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',t.x,t.y-s*0.06);ctx.textBaseline='alphabetic';}
-  else{ctx.fillStyle='#888';ctx.fillRect(t.x-20,t.y-30,40,50);}
+  if(img){ctx.drawImage(img,-s/2,-s*0.52,s,s);}
+  else if(t.type==='lightning'){ctx.fillStyle='rgba(120,210,255,.22)';ctx.beginPath();ctx.arc(0,-s*0.12,s*0.42,0,Math.PI*2);ctx.fill();
+    ctx.font=(s*0.5|0)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',0,-s*0.06);ctx.textBaseline='alphabetic';}
+  else{ctx.fillStyle='#888';ctx.fillRect(-20,-30,40,50);}
+  ctx.restore();
   // 等级标记
   for(let i=0;i<lv;i++){ctx.fillStyle='#ffd23f';ctx.strokeStyle='#7a4a06';ctx.lineWidth=1.5;
     ctx.beginPath();ctx.arc(t.x-8+i*8,t.y+s*0.34+10,3,0,Math.PI*2);ctx.fill();ctx.stroke();}
@@ -508,55 +524,76 @@ function drawTowerPreview(){
   ctx.globalAlpha=1;ctx.restore();
 }
 
-/* ---------- 敌人绘制 ---------- */
+/* ---------- 敌人绘制（含行走动画 / 轻微受击抖动 / 离屏染色，绝不污染主画布） ---------- */
 function drawEnemy(e){
   const def=ENEMIES[e.base];const s=44*def.scale*(e.boss?1.6:1);
+  const A=ANIM[e.base]||ANIM.goblin;
+  const isFlying=e.flying;
+  // 步态相位（冻结/减速时变慢）
+  const spd=e.speed*(e.slowT>0?0.6:1)*(G.freezeAllT>0?0.4:1);
+  const ph=e.t*0.001*(4.0+spd*0.03);
+  const bob = isFlying ? Math.sin(e.t*0.012)*3 : Math.abs(Math.sin(ph))*A.bob;
+  const tilt = isFlying ? 0 : Math.sin(ph)*A.tilt;
+  const squash = 1 + (isFlying?0:Math.sin(ph*2))*A.squash;
+  const jx = e.hitT>0?(Math.random()*4-2):0;
+  const jy = e.hitT>0?(Math.random()*3-1.5):0;
   ctx.save();ctx.translate(e.x,e.y);
-  // 阴影（飞行敌人阴影在地面下方）
-  if(e.flying){ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(0,26,s*0.4,s*0.12,0,0,Math.PI*2);ctx.fill();}
-  else {ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(0,s*0.42,s*0.4,s*0.13,0,0,Math.PI*2);ctx.fill();}
-  // 飞行抖动
-  if(e.flying)ctx.translate(0,Math.sin(e.t*0.012)*3);
-  // boss 红光环
-  if(e.boss){ctx.fillStyle='rgba(255,40,40,0.16)';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();
-    if(e.phase2){ctx.strokeStyle='rgba(255,90,90,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,s*0.66,0,Math.PI*2);ctx.stroke();}}
+  // 阴影（不随起伏抖动，避免地面阴影闪烁）
+  if(isFlying){ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(0,26,s*0.4,s*0.12,0,0,Math.PI*2);ctx.fill();}
+  else{ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(0,s*0.42,s*0.4,s*0.13,0,0,Math.PI*2);ctx.fill();}
+  // 受击抖动 + 行走起伏 + 镜像 + 摇摆 + 挤压（锚定脚底）
+  ctx.translate(jx,jy-bob);
+  ctx.scale(e.facing||1,1);
+  ctx.rotate(tilt);
+  ctx.translate(0,s*0.45);ctx.scale(1/squash,squash);ctx.translate(0,-s*0.45);
+  if(isFlying)ctx.scale(1,1+Math.sin(e.t*0.02)*0.1);   // 蝙蝠翅膀拍动
   const img=IMG[e.base];
   if(img){
-    if(e.boss){ctx.globalAlpha=1;ctx.drawImage(img,-s/2,-s*0.55,s,s);
-      // 红色叠加
-      ctx.globalCompositeOperation='source-atop';ctx.fillStyle='rgba(200,30,30,.35)';ctx.fillRect(-s/2,-s*0.55,s,s);
-      ctx.globalCompositeOperation='source-over';}
-    else ctx.drawImage(img,-s/2,-s*0.55,s,s);
+    // boss 用离屏红色染色（仅染精灵本体，绝不污染主画布背景/路径/塔）
+    const base = e.boss ? (tintSprite('troll','#c81e1e',0.34)||img) : img;
+    ctx.drawImage(base,-s/2,-s*0.55,s,s);
   } else {ctx.fillStyle=e.boss?'#a33':'#3a3';ctx.beginPath();ctx.arc(0,0,s*0.4,0,Math.PI*2);ctx.fill();}
-  // 减速冰冻效果
-  if(e.slowT>0){ctx.globalCompositeOperation='source-atop';ctx.fillStyle='rgba(90,180,255,.35)';
-    ctx.fillRect(-s/2,-s*0.55,s,s);ctx.globalCompositeOperation='source-over';
-    ctx.strokeStyle='rgba(150,220,255,.7)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,s*0.46,0,Math.PI*2);ctx.stroke();}
+  // 受击反馈：仅保留轻微抖动（jx/jy），已按要求去掉「闪白」叠加效果
+  // 减速冰冻外观：仅描边 + 冰晶点缀，不再用矩形污染主画布
+  if(e.slowT>0){
+    ctx.strokeStyle='rgba(150,220,255,.85)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,s*0.46,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(200,238,255,.95)';
+    for(let k=0;k<3;k++){const a=k*2.1+e.t*0.002;ctx.beginPath();ctx.arc(Math.cos(a)*s*0.4,Math.sin(a)*s*0.4,2.4,0,Math.PI*2);ctx.fill();}
+  }
   ctx.restore();
-  // 血条
-  const w=s*0.7,hp=e.hp/e.maxHp;
-  if(hp<1){const bx=e.x-w/2,by=e.y-(e.flying?28:s*0.62);
+  // boss 红光环（独立坐标系，避免 transform 影响）
+  if(e.boss){ctx.save();ctx.translate(e.x+jx,e.y+jy-bob);
+    ctx.fillStyle='rgba(255,40,40,0.14)';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();
+    if(e.phase2){ctx.strokeStyle='rgba(255,90,90,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,s*0.66,0,Math.PI*2);ctx.stroke();}
+    ctx.restore();}
+  // 血条（跟随起伏）
+  const w=s*0.7,hp=Math.max(0,e.hp/e.maxHp);
+  if(hp<1){const bx=e.x-w/2,by=e.y-(isFlying?28:s*0.62)-bob;
     ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(bx-1,by-1,w+2,5);
     ctx.fillStyle=hp>0.5?'#5fd84a':hp>0.25?'#ffd23f':'#ff5b3b';ctx.fillRect(bx,by,w*hp,3);}
 }
 function drawProjectile(p){
+  ctx.save();
   if(p.type==='archer'){ctx.strokeStyle='#6b4a23';ctx.lineWidth=2.5;ctx.beginPath();
     ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-Math.cos(p.dir)*10,p.y-Math.sin(p.dir)*10);ctx.stroke();
     ctx.fillStyle='#e0d4a0';ctx.beginPath();ctx.arc(p.x,p.y,2.5,0,Math.PI*2);ctx.fill();}
   else if(p.type==='magic'){ctx.shadowColor='#b24fd0';ctx.shadowBlur=12;ctx.fillStyle='#d68fff';
-    ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.fill();ctx.shadowColor='transparent';ctx.shadowBlur=0;
     ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,2.5,0,Math.PI*2);ctx.fill();}
   else if(p.type==='cannon'){ctx.fillStyle='#3a3a3a';ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fill();
     ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.arc(p.x-2,p.y-2,3,0,Math.PI*2);ctx.fill();}
   else if(p.type==='frost'){ctx.fillStyle='rgba(160,225,255,.9)';ctx.beginPath();
     for(let i=0;i<6;i++){const a=i*Math.PI/3;ctx.lineTo(p.x+Math.cos(a)*7,p.y+Math.sin(a)*7);}
     ctx.closePath();ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill();}
+  ctx.restore();
 }
 function drawFx(f){
-  ctx.globalAlpha=f.life/f.max;
+  ctx.save();
+  ctx.globalAlpha=Math.max(0,f.life/f.max);
   if(f.k==='boom'){ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();
     ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,f.r*0.7,0,Math.PI*2);ctx.stroke();}
   else if(f.k==='spark'){ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();}
+  else if(f.k==='dust'){ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();}
   else if(f.k==='ring'){ctx.strokeStyle=f.color;ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.stroke();}
   else if(f.k==='chain'){ctx.strokeStyle=f.color;ctx.lineWidth=2.4;ctx.shadowColor=f.color;ctx.shadowBlur=10;
     ctx.beginPath();
@@ -565,12 +602,82 @@ function drawFx(f){
       const p=f.nodes[i-1];const mx=(p.x+n.x)/2+(Math.random()*18-9),my=(p.y+n.y)/2+(Math.random()*18-9);
       ctx.lineTo(mx,my);ctx.lineTo(n.x,n.y);}
     ctx.stroke();ctx.shadowBlur=0;}
-  ctx.globalAlpha=1;
+  ctx.globalAlpha=1;ctx.restore();
 }
 function drawFloats(){
-  ctx.font='700 16px Fredoka';ctx.textAlign='center';
-  for(const f of G.floatTexts){ctx.globalAlpha=f.life/f.max;ctx.fillStyle=f.color;
-    ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(f.txt,f.x,f.y);ctx.fillText(f.txt,f.x,f.y);ctx.globalAlpha=1;}
+  ctx.save();
+  ctx.font='700 16px Fredoka';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  for(const f of G.floatTexts){ctx.globalAlpha=Math.max(0,f.life/f.max);ctx.fillStyle=f.color;
+    ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(f.txt,f.x,f.y);ctx.fillText(f.txt,f.x,f.y);}
+  ctx.restore();
+}
+
+/* ---------- 离屏染色精灵缓存（修复 source-atop 污染主画布的 bug） ----------
+   着色只在离屏画布上进行，主画布仅做 drawImage，彻底消除矩形色块污染背景/路径/塔的问题 */
+const _tintCache=new Map();
+function tintSprite(key,color,alpha){
+  const k=key+'|'+color+'|'+alpha;
+  if(_tintCache.has(k))return _tintCache.get(k);
+  const src=IMG[key];
+  if(!src){_tintCache.set(k,null);return null;}
+  const iw=src.naturalWidth||src.width, ih=src.naturalHeight||src.height;
+  const cnv=document.createElement('canvas');cnv.width=iw;cnv.height=ih;
+  const x=cnv.getContext('2d');
+  x.drawImage(src,0,0,iw,ih);
+  x.globalCompositeOperation='source-atop';     // 仅作用于离屏画布上的精灵本体
+  x.globalAlpha=alpha;x.fillStyle=color;x.fillRect(0,0,iw,ih);
+  _tintCache.set(k,cnv);return cnv;
+}
+
+/* 敌人行走动画参数（bob=起伏幅度, tilt=摇摆角度, squash=挤压拉伸） */
+const ANIM={
+  goblin:{bob:3.0,tilt:0.06,squash:0.05},
+  orc:{bob:2.2,tilt:0.05,squash:0.045},
+  troll:{bob:1.8,tilt:0.035,squash:0.035},
+  bat:{bob:0,tilt:0,squash:0}
+};
+
+/* 死亡消散动画（敌人从 G.enemies 移除后，仍在此播放放大/旋转/淡出） */
+function drawDeaths(){
+  for(const d of G.deaths){
+    const p=d.t/d.dur, a=1-p;
+    const s=44*(ENEMIES[d.base].scale)*(d.boss?1.6:1);
+    ctx.save();ctx.globalAlpha=a*a;
+    ctx.translate(d.x,d.y-p*14);
+    ctx.rotate(p*0.5*(d.facing||1));
+    ctx.scale(1+p*0.6,1+p*0.6);
+    const img=IMG[d.base];
+    if(img)ctx.drawImage(img,-s/2,-s*0.55,s,s);
+    ctx.restore();
+  }
+}
+
+/* 程序化生成闪电塔精灵（与城堡/其它塔同风格，风格统一且为真正的精灵） */
+function makeLightningSprite(size=480){
+  const c=document.createElement('canvas');c.width=size;c.height=size;
+  const g=c.getContext('2d');
+  g.save();g.translate(size/2,size*0.93);g.scale(size/480,size/480);
+  const L='#cfc7b6',M='#b9b2a4',D='#9a9285',OUT='#4b3a24';
+  g.lineJoin='round';g.lineCap='round';
+  const step=(w,h,y,col)=>{g.fillStyle=col;g.beginPath();g.moveTo(-w/2,y);g.lineTo(w/2,y);g.lineTo(w/2-h,y-h);g.lineTo(-w/2+h,y-h);g.closePath();g.fill();g.strokeStyle=OUT;g.lineWidth=6;g.stroke();};
+  step(150,16,0,M);step(132,18,-16,L);
+  g.fillStyle=L;g.beginPath();g.moveTo(-66,-34);g.lineTo(66,-34);g.lineTo(50,-200);g.lineTo(-50,-200);g.closePath();g.fill();
+  g.strokeStyle=OUT;g.lineWidth=7;g.stroke();
+  g.fillStyle='rgba(255,255,255,.10)';g.beginPath();g.moveTo(-66,-34);g.lineTo(0,-34);g.lineTo(0,-200);g.lineTo(-50,-200);g.closePath();g.fill();
+  g.fillStyle='rgba(0,0,0,.10)';g.beginPath();g.moveTo(66,-34);g.lineTo(0,-34);g.lineTo(0,-200);g.lineTo(50,-200);g.closePath();g.fill();
+  g.strokeStyle='rgba(75,58,36,.5)';g.lineWidth=3;g.beginPath();g.moveTo(0,-34);g.lineTo(0,-200);g.stroke();
+  g.fillStyle=D;g.fillRect(-56,-214,112,18);g.strokeStyle=OUT;g.lineWidth=6;g.strokeRect(-56,-214,112,18);
+  const cx=0,cy=-262;
+  g.save();g.shadowColor='#7fd0ff';g.shadowBlur=22;
+  const grd=g.createLinearGradient(cx,cy-34,cx,cy+34);
+  grd.addColorStop(0,'#d8f6ff');grd.addColorStop(.5,'#6fd8ff');grd.addColorStop(1,'#2a7fd0');
+  g.fillStyle=grd;g.beginPath();g.moveTo(cx,cy-34);g.lineTo(cx+22,cy);g.lineTo(cx,cy+34);g.lineTo(cx-22,cy);g.closePath();g.fill();
+  g.restore();
+  g.strokeStyle='#bff0ff';g.lineWidth=2;g.beginPath();g.moveTo(cx,cy-34);g.lineTo(cx+22,cy);g.lineTo(cx,cy+34);g.lineTo(cx-22,cy);g.closePath();g.stroke();
+  g.strokeStyle='#aef0ff';g.lineWidth=3;g.shadowColor='#7fd0ff';g.shadowBlur=10;
+  for(const sgn of [-1,1]){g.beginPath();let x=cx,y=cy+30;g.moveTo(x,y);
+    for(let k=0;k<3;k++){x+=sgn*(14+k*4);y+=12;g.lineTo(x,y);}g.stroke();}
+  g.restore();return c;
 }
 
 /* ---------- 更新逻辑 ---------- */
@@ -587,10 +694,12 @@ function update(dt){
   // 城堡受击红光平滑淡出（避免卡住/脉动造成屏幕闪烁）
   if(G.castleHitT>0){G.castleHitT-=dt*60;if(G.castleHitT<0)G.castleHitT=0;}
   if(G.freezeAllT>0)G.freezeAllT-=dt*1000;
+  // 死亡消散动画推进
+  for(let i=G.deaths.length-1;i>=0;i--){const d=G.deaths[i];d.t+=dt*1000;if(d.t>=d.dur)G.deaths.splice(i,1);}
   // 波次生成
   if(G.state==='wave')updateWave(dt);
-  // 塔射击
-  for(const t of G.towers){t.cool-=dt*1000;if(t.cool<=0){tryShoot(t);}}
+  // 塔射击 + 待机/后坐计时
+  for(const t of G.towers){t.t=(t.t||0)+dt*1000;if(t.recoil>0)t.recoil-=dt*4;t.cool-=dt*1000;if(t.cool<=0){tryShoot(t);}}
   // 投射物
   for(let i=G.projectiles.length-1;i>=0;i--){
     const p=G.projectiles[i];p.t+=dt;
@@ -605,13 +714,14 @@ function update(dt){
   for(let i=G.enemies.length-1;i>=0;i--){
     const e=G.enemies[i];e.t+=dt*1000;
     if(e.slowT>0)e.slowT-=dt*1000;
+    if(e.hitT>0)e.hitT-=dt*1.1;
     if(e.boss&&!e.phase2&&e.hp<=e.maxHp*0.5){
       e.phase2=true;e.speed*=1.3;
       G.floatTexts.push({x:e.x,y:e.y-10,txt:'狂爆!',color:'#ff5555',life:900,max:900});
       toast('⚠ 首领进入狂爆，召唤援军！',1800);
-      for(let k=0;k<2;k++){const sc=1+(G.wave-1)*0.07;const g={base:'goblin',type:'goblin',boss:false,
+      for(let k=0;k<2;k++){        const sc=1+(G.wave-1)*0.07;const g={base:'goblin',type:'goblin',boss:false,
         hp:ENEMIES.goblin.hp*sc,maxHp:ENEMIES.goblin.hp*sc,speed:ENEMIES.goblin.speed,reward:ENEMIES.goblin.reward,
-        armor:ENEMIES.goblin.armor,flying:false,dist:Math.max(0,e.dist-30-k*22),x:0,y:0,slowT:0,slow:0,t:0,dead:false,phase2:false};
+        armor:ENEMIES.goblin.armor,flying:false,dist:Math.max(0,e.dist-30-k*22),x:0,y:0,slowT:0,slow:0,t:0,hitT:0,facing:1,dead:false,phase2:false};
         const p=posOnPath(g.dist);g.x=p.x;g.y=p.y;G.enemies.push(g);}
     }
     const sp=e.speed*(e.slowT>0?1-e.slow:1)*(G.freezeAllT>0?0.05:1);
@@ -628,8 +738,11 @@ function update(dt){
     if(e.hp<=0)killEnemy(e,i);
   }
   // 效果
-  for(let i=G.fx.length-1;i>=0;i--){const f=G.fx[i];f.life-=dt*1000;f.r+=f.vr*dt*1000;
-    if(f.k==='spark'){f.x+=f.vx*dt*1000;f.y+=f.vy*dt*1000;f.vy+=200*dt;}
+  // 注意：life 以毫秒计，位移/半径以秒计（vr/vx/vy 单位均为「像素/秒」）
+  // 旧代码 f.r+=f.vr*dt*1000 把 vr 当成「像素/毫秒」，导致半径每帧暴涨数百像素、
+  // 单个特效圆瞬间铺满整屏 → 就是「攻击/击杀敌人时屏幕变色」的真正根因
+  for(let i=G.fx.length-1;i>=0;i--){const f=G.fx[i];f.life-=dt*1000;f.r+=f.vr*dt;
+    if(f.k==='spark'){f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=200*dt;}
     if(f.life<=0)G.fx.splice(i,1);}
   for(let i=G.floatTexts.length-1;i>=0;i--){const f=G.floatTexts[i];f.y-=22*dt;f.life-=dt*1000;
     if(f.life<=0)G.floatTexts.splice(i,1);}
@@ -650,7 +763,7 @@ function tryShoot(t){
     if(e.dist>bestDist){bestDist=e.dist;best=e;}
   }
   if(!best)return;
-  t.cool=t.cooldown;
+  t.cool=t.cooldown;t.recoil=1;
   t.aim=Math.atan2(best.y-t.y,best.x-t.x);
   SND.shoot();
   G.projectiles.push({x:t.x,y:t.y-12,target:best,type:t.type,speed:def.pSpeed,damage:t.damage,
@@ -676,7 +789,7 @@ function hit(p){
 }
 function damageEnemy(e,dmg){
   const real=Math.max(1,dmg-(e.armor||0));
-  e.hp-=real;
+  e.hp-=real;e.hitT=0.9;
 }
 function chainLightning(t){
   const def=TOWERS[t.type];const range=t.range;
@@ -684,7 +797,7 @@ function chainLightning(t){
   for(const e of G.enemies){if(e.dead)continue;if(e.flying&&!def.air)continue;
     const d=dist(t.x,t.y,e.x,e.y);if(d>range)continue;if(e.dist>bestDist){bestDist=e.dist;best=e;}}
   if(!best)return;
-  t.cool=t.cooldown;t.aim=Math.atan2(best.y-t.y,best.x-t.x);
+  t.cool=t.cooldown;t.recoil=1;t.aim=Math.atan2(best.y-t.y,best.x-t.x);
   const nodes=[{x:t.x,y:t.y-12}];const hitSet=new Set();let cur=best,dmg=t.damage;
   for(let step=0;step<def.chain&&cur;step++){
     nodes.push({x:cur.x,y:cur.y});hitSet.add(cur);damageEnemy(cur,dmg);
@@ -707,6 +820,7 @@ function killEnemy(e,i){
   G.fx.push({k:'spark',x:e.x,y:e.y,r:8,vr:50,life:300,max:300,color:e.boss?'#ff5555':'#ffd23f',vx:0,vy:0});
   SND.die();
   updateHUD();
+  G.deaths.push({base:e.base,boss:e.boss,x:e.x,y:e.y,facing:e.facing||1,t:0,dur:480});
   G.enemies.splice(i,1);
   if(G.bossActive&&e.boss)G.bossActive=false;
 }
@@ -726,7 +840,7 @@ function spawnEnemy(type){
   const hp=(boss?def.hp*6:def.hp)*hpScale*diff.hp;
   const e={base,type,boss,hp,maxHp:hp,speed:def.speed*diff.speed,reward:Math.max(1,Math.round((boss?120:def.reward)*diff.reward)),
     armor:boss?8:def.armor,flying:def.flying,dist:0,x:PATH[0].x,y:PATH[0].y,
-    slowT:0,slow:0,t:0,dead:false,phase2:false};
+    slowT:0,slow:0,t:0,hitT:0,facing:Math.cos(dirOnPath(0))>=0?1:-1,dead:false,phase2:false};
   G.enemies.push(e);
   if(boss){G.bossActive=true;toast('⚠ 首领来袭！',2600);}
 }
@@ -793,7 +907,7 @@ function startGame(mode){
 }
 function resetGame(){
   G.gold=200;G.life=20;G.wave=0;G.state='idle';
-  G.towers.length=0;G.enemies.length=0;G.projectiles.length=0;G.fx.length=0;G.floatTexts.length=0;
+  G.towers.length=0;G.enemies.length=0;G.projectiles.length=0;G.fx.length=0;G.floatTexts.length=0;G.deaths.length=0;
   G.selectedType=null;G.selectedTower=null;G.bossActive=false;G.autoTimer=0;
   G.paused=false;updatePauseUI();
   document.getElementById('overlay').style.display='none';
@@ -810,7 +924,7 @@ function castFreeze(){
   if(G.state!=='wave'&&G.state!=='cleared'){toast('开战后才能释放技能');return;}
   if(G.energy<100){toast('能量不足（需 100）');return;}
   G.energy=0;G.freezeAllT=3000;
-  G.fx.push({k:'ring',x:W/2,y:H/2,r:20,vr:0.8,life:800,max:800,color:'rgba(150,220,255,.9)'});
+  G.fx.push({k:'ring',x:W/2,y:H/2,r:20,vr:850,life:800,max:800,color:'rgba(150,220,255,.9)'});
   toast('❄ 全屏冻冻！敌人被冻结 3 秒',1600);SND.wave();updateEnergyUI();
 }
 
@@ -968,6 +1082,11 @@ document.getElementById('againBtn').onclick=()=>startGame(G.mode);
 document.getElementById('muteBtn').onclick=()=>{G.mute=!G.mute;document.getElementById('muteBtn').textContent=G.mute?'🔇':'🔊';};
 document.getElementById('pauseBtn').onclick=()=>{audio();togglePause();};
 document.getElementById('skillBtn').onclick=()=>{audio();castFreeze();};
+document.getElementById('speedBtn').onclick=()=>{audio();const seq=[1,2,3];const i=seq.indexOf(G.speed);
+  G.speed=seq[(i+1)%seq.length];const b=document.getElementById('speedBtn');b.textContent=G.speed+'×';b.classList.toggle('turbo',G.speed>1);};
+document.getElementById('pauseResume').onclick=()=>{togglePause();};
+document.getElementById('pauseRestart').onclick=()=>{resetGame();};
+document.getElementById('pauseHome').onclick=()=>{resetGame();showMenu();};
 document.getElementById('campaignBtn').onclick=()=>{audio();startGame('campaign');};
 document.getElementById('endlessBtn').onclick=()=>{audio();startGame('endless');};
 document.getElementById('achBtn').onclick=()=>{audio();openAch();};
@@ -1045,6 +1164,7 @@ function render(){
   drawTowerPreview();
   for(const p of G.projectiles)drawProjectile(p);
   for(const f of G.fx)drawFx(f);
+  drawDeaths();
   drawFloats();
   if(G.freezeAllT>0){const a=Math.min(0.26,G.freezeAllT/3000*0.26);
     ctx.fillStyle='rgba(150,220,255,'+a+')';ctx.fillRect(0,0,W,H);
@@ -1067,6 +1187,7 @@ async function boot(){
     const img=await loadImg(SRC[k]);RAW[k]=img;IMG[k]=img;   // WebP 自带 alpha，无需色键处理
   }));
   buildStaticLayer();                  // 烘焙静态背景层
+  IMG.lightning=makeLightningSprite();
   loadGame();
   updateHUD();renderBar();
   if(!G.tutorialDone)openTutorial();else showMenu();
