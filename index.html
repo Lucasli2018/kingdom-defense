@@ -139,7 +139,10 @@
           <button class="segBtn" data-d="normal">普通</button>
           <button class="segBtn" data-d="hard">困难</button>
         </div>
-        <div class="btnrow"><button class="pill go" id="campaignBtn">🏰 开始战役</button></div>
+        <div class="btnrow">
+          <button class="pill go" id="campaignBtn">🏰 开始战役</button>
+          <button class="pill go" id="endlessBtn">∞ 无尽模式</button>
+        </div>
       </div>
       <div class="btnrow" id="overRow" style="display:none"><button class="pill go" id="againBtn">↻ 再玩一次</button></div>
       <div id="menuStats" class="menuStats"></div>
@@ -616,7 +619,7 @@ function chainLightning(t){
 }
 function killEnemy(e,i){
   e.dead=true;
-  G.gold+=e.reward;
+  G.gold+=e.reward;G.score+=e.reward;G.kills++;
   G.energy=Math.min(100,G.energy+(e.boss?24:3));updateEnergyUI();
   G.floatTexts.push({x:e.x,y:e.y-10,txt:'+'+e.reward,color:'#ffd23f',life:700,max:700});
   G.fx.push({k:'spark',x:e.x,y:e.y,r:8,vr:50,life:300,max:300,color:e.boss?'#ff5555':'#ffd23f',vx:0,vy:0});
@@ -646,27 +649,38 @@ function spawnEnemy(type){
   if(boss){G.bossActive=true;toast('⚠ 首领来袭！',2600);}
 }
 function buildSchedule(){
-  const wave=G.wave;const segs=WAVES[wave-1];const sched=[];
+  let segs;
+  if(G.wave<=WAVES.length){segs=WAVES[G.wave-1];}
+  else{ // 无尽模式程序化波次：规模随波数递增
+    const w=G.wave-WAVES.length;
+    segs=[{t:'goblin',n:6+w*2,g:360},{t:'orc',n:3+w,g:700},{t:'bat',n:2+w,g:800}];
+    if(w%4===0)segs.push({t:'troll',n:1+Math.floor(w/4),g:1600});
+    if(w%5===0)segs.push({t:'boss',n:1,g:0});
+  }
+  const sched=[];
   for(const s of segs){for(let k=0;k<s.n;k++)sched.push({type:s.t,time:k*s.g});}
   sched.sort((a,b)=>a.time-b.time);return sched;
 }
 function startWave(){
   if(G.state!=='idle'&&G.state!=='cleared')return;
-  if(G.wave>=WAVES.length)return;
+  if(G.mode!=='endless'&&G.wave>=WAVES.length)return;
   G.wave++;G.state='wave';G.schedule=buildSchedule();G.spawned=0;G.spawnTimer=0;
-  SND.wave();updateHUD();updateStartBtn();toast('第 '+G.wave+' 波 / '+WAVES.length,1600);
+  SND.wave();updateHUD();updateStartBtn();
+  toast(G.mode==='endless'?('♾ 第 '+G.wave+' 波（无尽）'):('第 '+G.wave+' 波 / '+WAVES.length),1600);
 }
 function waveCleared(){
   G.state='cleared';G.bossActive=false;
-  const bonus=20+G.wave*8;G.gold+=bonus;
+  const bonus=20+G.wave*8;G.gold+=bonus;G.score+=bonus;
   G.floatTexts.push({x:W/2,y:H/2,txt:'波次完成 +'+bonus,color:'#7fff7f',life:1200,max:1200});
-  if(G.wave>=WAVES.length){gameOver(true);return;}
+  if(G.mode!=='endless'&&G.wave>=WAVES.length){gameOver(true);return;}
+  if(G.wave>G.bestWave)G.bestWave=G.wave;saveGame();
   updateHUD();updateStartBtn();
   G.autoTimer=5; // 5秒后自动开始
 }
 function gameOver(win){
   G.state=win?'win':'over';
   if(G.wave>G.bestWave)G.bestWave=G.wave;
+  const sc=G.score+(win?1000:0);if(sc>G.bestScore)G.bestScore=sc;
   saveGame();
   const ov=document.getElementById('overlay');ov.style.display='flex';
   document.getElementById('menuMain').style.display='none';
@@ -740,7 +754,7 @@ function sellTower(t){
 function updateHUD(){
   document.getElementById('goldV').textContent=G.gold;
   document.getElementById('lifeV').textContent=Math.max(0,G.life);
-  document.getElementById('waveV').textContent='波次 '+G.wave+'/'+WAVES.length;
+  document.getElementById('waveV').textContent='波次 '+G.wave+(G.mode==='endless'?' ∞':'/'+WAVES.length);
   renderBar();
 }
 function updateStartBtn(){
@@ -860,6 +874,7 @@ document.getElementById('muteBtn').onclick=()=>{G.mute=!G.mute;document.getEleme
 document.getElementById('pauseBtn').onclick=()=>{audio();togglePause();};
 document.getElementById('skillBtn').onclick=()=>{audio();castFreeze();};
 document.getElementById('campaignBtn').onclick=()=>{audio();startGame('campaign');};
+document.getElementById('endlessBtn').onclick=()=>{audio();startGame('endless');};
 document.querySelectorAll('#diffSeg .segBtn').forEach(b=>{
   b.onclick=()=>{G.difficulty=b.dataset.d;saveGame();updateDiffUI();};
 });
