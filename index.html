@@ -328,7 +328,7 @@ function drawCastleTo(c){
 function drawCastle(){
   drawCastleTo(ctx);
   // 城门发光（受伤时动态层）
-  if(G.castleHitT>0){const cx=940,cy=280;ctx.fillStyle='rgba(255,60,60,'+(0.3+0.3*Math.sin(G.castleHitT/3))+')';
+  if(G.castleHitT>0){const cx=940,cy=280;ctx.fillStyle='rgba(255,60,60,'+(G.castleHitT/18*0.4)+')';
     ctx.beginPath();ctx.arc(cx,cy+20,30,0,Math.PI*2);ctx.fill();}
 }
 G.castleHitT=0;
@@ -375,7 +375,7 @@ function drawEnemy(e){
   // 飞行抖动
   if(e.flying)ctx.translate(0,Math.sin(e.t*0.012)*3);
   // boss 红光环
-  if(e.boss){ctx.fillStyle='rgba(255,40,40,'+(0.18+0.1*Math.sin(e.t*0.02))+')';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();}
+  if(e.boss){ctx.fillStyle='rgba(255,40,40,0.16)';ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fill();}
   const img=IMG[e.base];
   if(img){
     if(e.boss){ctx.globalAlpha=1;ctx.drawImage(img,-s/2,-s*0.55,s,s);
@@ -433,6 +433,8 @@ function loop(ts){
 }
 function update(dt){
   if(G.state==='over'||G.state==='win')return;
+  // 城堡受击红光平滑淡出（避免卡住/脉动造成屏幕闪烁）
+  if(G.castleHitT>0){G.castleHitT-=dt*60;if(G.castleHitT<0)G.castleHitT=0;}
   // 波次生成
   if(G.state==='wave')updateWave(dt);
   // 塔射击
@@ -734,7 +736,7 @@ function render(){
   if(staticReady)ctx.drawImage(staticLayer,0,0);
   else{drawField();drawPath();drawDeco();drawCastleTo(ctx);}
   // 城门受伤发光动态层
-  if(G.castleHitT>0){const cx=940,cy=280;ctx.fillStyle='rgba(255,60,60,'+(0.3+0.3*Math.sin(G.castleHitT/3))+')';
+  if(G.castleHitT>0){const cx=940,cy=280;ctx.fillStyle='rgba(255,60,60,'+(G.castleHitT/18*0.4)+')';
     ctx.beginPath();ctx.arc(cx,cy+20,30,0,Math.PI*2);ctx.fill();}
   // 按 y 排序绘制（伪深度）
   const ents=[...G.towers.map(t=>({k:'t',y:t.y,o:t})),...G.enemies.map(e=>({k:'e',y:e.y,o:e}))];
